@@ -3,6 +3,11 @@ import pandas as pd
 import numpy as np
 import yaml
 import matplotlib.pyplot as plt
+import warnings
+
+# Suppress annoying warnings from sklearn/shap interactions
+warnings.filterwarnings("ignore", message=".*does not have valid feature names.*")
+warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
 
 # Import project modules
 # We need to make sure the root dir is in sys.path if we run this from root
