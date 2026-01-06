@@ -1,0 +1,5 @@
+data_path: data/sample.csv
+target: Outcome
+model: random_forest
+noise: 0.02
+seeds: [1, 2, 3, 4, 5]
