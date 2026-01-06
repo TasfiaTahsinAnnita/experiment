@@ -6,3 +6,8 @@ lime
 matplotlib
 pyyaml
 streamlit
+seaborn
+xgboost
+lightgbm
+catboost
+scipy
