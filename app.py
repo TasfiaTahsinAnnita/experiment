@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -24,7 +23,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.feature_selection import SelectKBest, f_classif, f_regression
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
-from sklearn.metrics import roc_curve, precision_recall_curve, confusion_matrix, ConfusionMatrixDisplay, auc, mean_squared_error, r2_score
+from sklearn.metrics import roc_curve, precision_recall_curve, confusion_matrix, ConfusionMatrixDisplay, auc, mean_squared_error, r2_score, accuracy_score, f1_score, precision_score, recall_score, mean_absolute_error
 from sklearn.model_selection import learning_curve
 from scipy import stats
 import time
@@ -49,654 +48,587 @@ st.sidebar.header("Configuration")
 uploaded_file = st.sidebar.file_uploader("Upload your CSV dataset", type=["csv"])
 
 if uploaded_file is not None:
-    # Load data immediately to get columns
+    # Load data immediately
     try:
         df = pd.read_csv(uploaded_file)
         
-        if "processed_df" not in st.session_state:
-            st.session_state.processed_df = None
-            
+        # Initialize global state lists if needed
         if "experiment_history" not in st.session_state:
             st.session_state.experiment_history = []
-            
-        # Tabs for better organization
-        tab1, tab2, tab3, tab4 = st.tabs([
-            "Exploratory Data Analysis (EDA)", 
-            "Data Preprocessing", 
-            "Consistency Experiment",
-            "Comparisons & Statistics"
-        ])
         
-        # --- TAB 1: EDA ---
-        with tab1:
-            st.header("1. Exploratory Data Analysis")
-            
-            target_col_eda = st.selectbox("Select Target Variable", df.columns, key="eda_target")
-            
-            # 1. Structural Analysis
-            st.subheader("1.1 Structural Analysis")
-            buffer = pd.DataFrame({
-                "Column": df.columns,
-                "Type": df.dtypes.astype(str),
-                "Non-Null Count": df.count(),
-                "Null Count": df.isnull().sum(),
-                "Unique Values": df.nunique()
-            }).reset_index(drop=True)
-            st.dataframe(buffer)
+        if "processed_df" not in st.session_state:
+             st.session_state.processed_df = None
 
-            # 2. Descriptive Statistics
-            st.subheader("1.2 Descriptive Statistics")
-            st.dataframe(df.describe())
+        # --- STEP 1: TARGET SELECTION & CONFIG ---
+        st.write("---")
+        st.header("1. Analysis Setup")
+        
+        col_setup1, col_setup2 = st.columns(2)
+        with col_setup1:
+            target_col = st.selectbox("Select Target Column", df.columns)
+            st.session_state.target_col = target_col
             
-            # 3. Missing Value Analysis
-            st.subheader("1.3 Missing Value Analysis")
-            missing = df.isnull().sum()
-            if missing.sum() > 0:
-                st.bar_chart(missing[missing > 0])
+        with col_setup2:
+            st.write("**Configuration**")
+            # Heuristic for task type
+            is_numeric = pd.api.types.is_numeric_dtype(df[target_col])
+            recommended_task = "regression" if is_numeric and df[target_col].nunique() > 20 else "classification"
+            task_type = st.selectbox("Task Type", ["classification", "regression"], index=0 if recommended_task=="classification" else 1)
+            
+            # Models for automated run - USE ALL AVAILABLE
+            if task_type == "classification":
+                default_models = [
+                    "logistic", "random_forest", "xgboost", "lightgbm", "decision_tree", 
+                    "svm", "knn", "naive_bayes", "gbm", "adaboost", "extra_trees", "mlp", "dummy"
+                ]
             else:
-                st.success("No missing values found!")
-
-            # 4. Distribution Analysis
-            st.subheader("1.4 Distribution Analysis")
-            dist_col = st.selectbox("Select Feature for Distribution", df.columns, key="dist_col")
-            fig, ax = plt.subplots()
-            if pd.api.types.is_numeric_dtype(df[dist_col]):
-                sns.histplot(df[dist_col], kde=True, ax=ax)
-            else:
-                df[dist_col].value_counts().plot(kind='bar', ax=ax)
-            add_watermark(ax)
-            st.pyplot(fig)
-
-            # 5. Outlier Analysis (Visual)
-            st.subheader("1.5 Outlier Analysis (Boxplot)")
-            num_cols = df.select_dtypes(include=[np.number]).columns
-            if len(num_cols) > 0:
-                outlier_col = st.selectbox("Select Feature for Boxplot", num_cols, key="out_col")
-                fig, ax = plt.subplots()
-                sns.boxplot(x=df[outlier_col], ax=ax)
-                add_watermark(ax)
-                st.pyplot(fig)
-
-            # 6. Correlation Analysis
-            st.subheader("1.6 Correlation Analysis")
-            if len(num_cols) > 1:
-                fig, ax = plt.subplots(figsize=(10, 8))
-                sns.heatmap(df[num_cols].corr(), annot=True, cmap="coolwarm", fmt=".2f", ax=ax)
-                add_watermark(ax)
-                st.pyplot(fig)
-            
-            # 7. Feature-Target Relationship
-            st.subheader("1.7 Feature-Target Relationship")
-            ft_col = st.selectbox("Select Feature to Compare with Target", df.columns, key="ft_col")
-            fig, ax = plt.subplots()
-            
-            # Determine plot type based on dtypes
-            target_is_num = pd.api.types.is_numeric_dtype(df[target_col_eda])
-            feat_is_num = pd.api.types.is_numeric_dtype(df[ft_col])
-            
-            if target_is_num and feat_is_num:
-                sns.scatterplot(x=df[ft_col], y=df[target_col_eda], ax=ax)
-            elif not target_is_num and feat_is_num:
-                sns.boxplot(x=df[target_col_eda], y=df[ft_col], ax=ax)
-            elif target_is_num and not feat_is_num:
-                sns.boxplot(x=df[ft_col], y=df[target_col_eda], ax=ax)
-            else:
-                # Cat vs Cat - Heatmap of contingency table
-                ct = pd.crosstab(df[ft_col], df[target_col_eda])
-                sns.heatmap(ct, annot=True, fmt='d', cmap="YlGnBu", ax=ax)
+                default_models = [
+                    "linear", "random_forest", "xgboost", "lightgbm", "ridge", "lasso", 
+                    "decision_tree", "svm", "knn", "gbm", "adaboost", "extra_trees", "mlp", "dummy"
+                ]
                 
-            add_watermark(ax)
-            st.pyplot(fig)
+            run_analysis_btn = st.button("RUN FULL AUTOMATED ANALYSIS", type="primary", use_container_width=True)
 
-            # Advanced Mining sections...
-            st.markdown("---")
-            st.header("Advanced Data Mining")
-            # ... (PCA logic reused)
-            if len(num_cols) > 0:
-                X_pca = df[num_cols].fillna(df[num_cols].mean())
-                scaler = StandardScaler()
-                X_scaled = scaler.fit_transform(X_pca)
+        # --- EXECUTION LOGIC ---
+        if run_analysis_btn:
+            st.session_state.has_run = True
+            st.session_state.auto_task_type = task_type
+            st.session_state.auto_models = default_models
+            # Clear previous run results
+            st.session_state.experiment_history = []
+            st.session_state.failed_models = [] # New list for tracking failures
+            st.session_state.processed_df = None
+
+        if st.session_state.get("has_run", False):
+            st.divider()
+            status_container = st.empty()
+            status_container.info("Status: Running Analysis... Scroll down to track progress.")
+            
+            # ==========================================
+            # 1. AUTOMATED EDA
+            # ==========================================
+            with st.expander("2. Exploratory Data Analysis (EDA) ✅", expanded=False):
+                st.subheader("Data Overview")
+                st.dataframe(pd.DataFrame({
+                    "Column": df.columns,
+                    "Type": df.dtypes.astype(str),
+                    "Missing": df.isnull().sum(),
+                    "Unique": df.nunique()
+                }))
                 
-                col3, col4 = st.columns(2)
-                with col3:
-                    st.write("### PCA Projection (2D)")
-                    pca = PCA(n_components=2)
-                    components = pca.fit_transform(X_scaled)
-                    pca_df = pd.DataFrame(data=components, columns=['PC1', 'PC2'])
-                    if target_col_eda in df.columns:
-                        pca_df['Target'] = df[target_col_eda].values if len(df) == len(pca_df) else None
-                        fig, ax = plt.subplots()
-                        if pca_df['Target'] is not None:
-                            sns.scatterplot(x='PC1', y='PC2', hue='Target', data=pca_df, ax=ax)
+                st.subheader("Visualizations")
+                cols_to_viz = [c for c in df.columns if c != target_col][:6]
+                for col in cols_to_viz:
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.caption(f"Distribution: {col}")
+                        fig, ax = plt.subplots(figsize=(5, 3))
+                        if pd.api.types.is_numeric_dtype(df[col]):
+                            sns.histplot(df[col], kde=True, ax=ax)
                         else:
-                            sns.scatterplot(x='PC1', y='PC2', data=pca_df, ax=ax)
+                            sns.countplot(y=df[col], ax=ax)
+                        add_watermark(ax)
+                        st.pyplot(fig)
+                    with c2:
+                        st.caption(f"{col} vs {target_col}")
+                        fig, ax = plt.subplots(figsize=(5, 3))
+                        if pd.api.types.is_numeric_dtype(df[col]) and pd.api.types.is_numeric_dtype(df[target_col]):
+                            sns.scatterplot(data=df, x=col, y=target_col, ax=ax)
+                        elif not pd.api.types.is_numeric_dtype(df[col]) and pd.api.types.is_numeric_dtype(df[target_col]):
+                            sns.boxplot(data=df, x=col, y=target_col, ax=ax)
+                        elif pd.api.types.is_numeric_dtype(df[col]) and not pd.api.types.is_numeric_dtype(df[target_col]):
+                            sns.boxplot(data=df, x=target_col, y=col, ax=ax)
+                        else:
+                            try:
+                                ct = pd.crosstab(df[col], df[target_col])
+                                sns.heatmap(ct, annot=True, fmt='d', ax=ax)
+                            except: pass
                         add_watermark(ax)
                         st.pyplot(fig)
 
-                with col4:
-                    st.write("### Outlier Detection (Isolation Forest)")
-                    iso = IsolationForest(contamination=0.05, random_state=42)
-                    outliers = iso.fit_predict(X_scaled)
-                    pca_df['Outlier'] = outliers
-                    st.metric("Potential Outliers", f"{(outliers == -1).sum()}")
-                    fig, ax = plt.subplots()
-                    sns.scatterplot(x='PC1', y='PC2', hue='Outlier', data=pca_df, palette={1: 'green', -1: 'red'}, ax=ax)
-                    add_watermark(ax)
-                    st.pyplot(fig)
-        
-        # --- TAB 2: PREPROCESSING ---
-        with tab2:
-            st.header("2. Data Preprocessing Pipeline")
-            st.markdown("Configure how to process your data before running the experiment.")
-            
-            prep_df = df.copy() # Start with fresh copy for preview
-            
-            # A. Missing Value Imputation
-            st.subheader("2.1 Missing Value Imputation")
-            impute_strategy = st.selectbox("Numeric Imputation Strategy", ["mean", "median", "most_frequent", "constant (0)"])
-            
-            # B. Categorical Encoding
-            st.subheader("2.2 Categorical Encoding")
-            cat_strategy = st.radio("Encoding Method", ["One-Hot Encoding (get_dummies)", "Label Encoding"])
-            
-            # C. Outlier Treatment
-            st.subheader("2.3 Outlier Treatment")
-            outlier_method = st.checkbox("Remove Outliers (Isolation Forest filtering)?")
-            
-            # D. Feature Engineering
-            st.subheader("2.4 Feature Engineering")
-            poly_features = st.checkbox("Add Polynomial Features (Degree 2)?")
-            
-            # E. Scaling
-            st.subheader("2.5 Feature Scaling")
-            scaler_option = st.selectbox("Scaling Method", ["None", "StandardScaler", "MinMaxScaler", "RobustScaler"])
-            
-            # F. Feature Selection
-            st.subheader("2.6 Feature Selection")
-            selection_k = st.number_input("Select K Best Features (0 = Keep All)", min_value=0, max_value=len(df.columns), value=0)
+            # ==========================================
+            # 2. AUTOMATED PREPROCESSING
+            # ==========================================
+            if "processed_df" not in st.session_state or st.session_state.processed_df is None:
+                with st.spinner("Step 3: Preprocessing Data..."):
+                    # Heuristic Pipeline
+                    temp_df = df.copy()
+                    
+                    # Drop High Cardinality ID cols
+                    for col in temp_df.columns:
+                        if temp_df[col].dtype == 'object' and temp_df[col].nunique() > 0.9 * len(temp_df) and col != target_col:
+                            temp_df.drop(columns=[col], inplace=True)
 
-            if st.button("Apply Preprocessing & Save for Experiment"):
-                with st.spinner("Processing..."):
-                    # 1. Target Separation (Don't process target yet)
-                    target_col = target_col_eda # Use the one selected in EDA
-                    if target_col not in prep_df.columns:
-                        st.error(f"Target column {target_col} not found.")
-                    else:
-                        prep_df = prep_df.dropna(subset=[target_col])
-                        y_prep = prep_df[target_col]
-                        X_prep = prep_df.drop(columns=[target_col])
-                        
-                        # 2. Imputation (Numeric)
-                        num_cols_prep = X_prep.select_dtypes(include=[np.number]).columns
-                        cat_cols_prep = X_prep.select_dtypes(exclude=[np.number]).columns
-                        
-                        if impute_strategy == "constant (0)":
-                             X_prep[num_cols_prep] = X_prep[num_cols_prep].fillna(0)
-                        else:
-                             imp = SimpleImputer(strategy=impute_strategy)
-                             if len(num_cols_prep) > 0:
-                                X_prep[num_cols_prep] = imp.fit_transform(X_prep[num_cols_prep])
-                        
-                        # Fill categorical NaNs with 'Missing'
-                        X_prep[cat_cols_prep] = X_prep[cat_cols_prep].fillna("Missing")
+                    # Impute
+                    num_cols_p = temp_df.select_dtypes(include=np.number).columns
+                    cat_cols_p = temp_df.select_dtypes(exclude=np.number).columns
+                    
+                    if len(num_cols_p) > 0:
+                        si = SimpleImputer(strategy='mean')
+                        temp_df[num_cols_p] = si.fit_transform(temp_df[num_cols_p])
+                    
+                    if len(cat_cols_p) > 0:
+                        si_c = SimpleImputer(strategy='most_frequent')
+                        temp_df[cat_cols_p] = si_c.fit_transform(temp_df[cat_cols_p])
+                        # Encode
+                        temp_df = pd.get_dummies(temp_df, columns=cat_cols_p, drop_first=True)
+                    
+                    # Scale Features
+                    scaler = StandardScaler()
+                    feats = [c for c in temp_df.columns if c != target_col]
+                    if feats:
+                        temp_df[feats] = scaler.fit_transform(temp_df[feats])
+                    
+                    st.session_state.processed_df = temp_df
+                    
+            # ==========================================
+            # 3. EXPERIMENT EXECUTION
+            # ==========================================
+            processed_data = st.session_state.processed_df
+            
+            # Initialise failure list if not present
+            if "failed_models" not in st.session_state:
+                st.session_state.failed_models = []
 
-                        # 3. Categorical Encoding
-                        if cat_strategy.startswith("One-Hot"):
-                            X_prep = pd.get_dummies(X_prep, columns=cat_cols_prep, drop_first=True)
-                        else:
-                            le = LabelEncoder()
-                            for col in cat_cols_prep:
-                                X_prep[col] = le.fit_transform(X_prep[col].astype(str))
-                        
-                        # 4. Outlier Removal (Rows)
-                        if outlier_method:
-                            iso = IsolationForest(contamination=0.05, random_state=42)
-                            # Fit on current X
-                            preds = iso.fit_predict(X_prep)
-                            mask = preds != -1
-                            X_prep = X_prep[mask]
-                            y_prep = y_prep[mask]
-                            st.info(f"Removed {(~mask).sum()} outlier rows.")
+            # Only start training if we haven't done it this run-session
+            if not st.session_state.experiment_history and not st.session_state.failed_models:
+                 with st.status("Step 4: Training Models & Generating Explanations...", expanded=True) as status:
+                     models = st.session_state.auto_models
+                     explainers = ["SHAP"] # Default to SHAP for speed since we have MANY models now. LIME is slow.
+                     # Let the user add LIME manually if they want, or we can add it back if they insist.
+                     # "All models" implies we should probably run the default explainer.
+                     # Running 2 explainers * 14 models * 2 seeds = 56 runs. That's a lot.
+                     # Let's stick to SHAP as primary for speed, unless user didn't specify.
+                     # Actually, to be thorough, let's keep both but warn it takes time.
+                     explainers = ["SHAP", "LIME"]
+                     
+                     seeds = [1, 2] 
+                     noise = 0.05
+                     
+                     for m_name in models:
+                         # We treat the model as the unit of failure. If it fails for SHAP, it probably fails for LIME.
+                         # But let's try both.
+                         model_failed_completely = True
+                         failure_reason = ""
 
-                        # 5. Feature Engineering
-                        if poly_features:
-                            poly = PolynomialFeatures(degree=2, include_bias=False)
-                            # Only apply to numeric columns to verify size? Or all? Poly on one-hot is huge.
-                            # Just apply to everything (safe) or limit. Let's apply.
-                            X_poly = poly.fit_transform(X_prep)
-                            feat_names = poly.get_feature_names_out(X_prep.columns)
-                            X_prep = pd.DataFrame(X_poly, columns=feat_names, index=X_prep.index)
-                        
-                        # 6. Scaling
-                        if scaler_option != "None":
-                            if scaler_option == "StandardScaler": s = StandardScaler()
-                            elif scaler_option == "MinMaxScaler": s = MinMaxScaler()
-                            else: s = RobustScaler()
+                         for e_name in explainers:
+                             status.write(f"Processing: {m_name} + {e_name}")
+                             
+                             m_results = []
+                             start_time = time.time()
+                             success = True
+                             
+                             
+                             # Cache for Learning Curve (only run once per model to save time)
+                             lc_data = None
+                             
+                             for seed in seeds:
+                                 try:
+                                     X_tr, X_te, y_tr, y_te = load_data(processed_data, target_col, seed)
+                                     model = get_model(m_name, seed, task_type=st.session_state.auto_task_type)
+                                     
+                                     # --- Advanced Training with History ---
+                                     epoch_history = {}
+                                     try:
+                                         # Setup for Iterative Models (XGB, LGBM) to get Epoch Curves
+                                         if "XGB" in str(type(model)) or "LGBM" in str(type(model)):
+                                             eval_set = [(X_tr, y_tr), (X_te, y_te)]
+                                             # Determine metric
+                                             if st.session_state.auto_task_type == "classification":
+                                                  eval_metric = ["logloss", "error"] # error is 1-accuracy
+                                             else:
+                                                  eval_metric = ["rmse", "mae"]
+                                                  
+                                             model.fit(X_tr, y_tr, eval_set=eval_set, eval_metric=eval_metric, verbose=False)
+                                             
+                                             # Extract History
+                                             if hasattr(model, "evals_result"):
+                                                 results = model.evals_result()
+                                                 # Parse XGB/LGBM structure dict[dname][metric] = list
+                                                 epoch_history["type"] = "boost"
+                                                 epoch_history["data"] = results
+                                                 epoch_history["metrics"] = eval_metric
+                                         
+                                         elif "GradientBoosting" in str(type(model)):
+                                             model.fit(X_tr, y_tr)
+                                             # GBM exposes train_score_ (Loss)
+                                             epoch_history["type"] = "sklearn_gbm"
+                                             epoch_history["loss"] = model.train_score_
+                                             # Validate score not available by default in sklearn GBM without monitor, but loss is.
+                                             
+                                         elif "MLP" in str(type(model)):
+                                             model.fit(X_tr, y_tr)
+                                             epoch_history["type"] = "sklearn_mlp"
+                                             epoch_history["loss"] = model.loss_curve_
+                                             
+                                         else:
+                                             # Standard fit for others
+                                             model.fit(X_tr, y_tr)
+                                             
+                                     except TypeError as te:
+                                          # Fallback if eval_set not supported for some version/wrapper
+                                          model.fit(X_tr, y_tr)
+                                     except Exception as ex:
+                                          raise ex # Re-raise real errors
+
+                                     expl_fn = shap_explain if e_name == "SHAP" else lime_explain
+                                     base = expl_fn(model, X_tr, X_te, task_type=st.session_state.auto_task_type)
+                                     
+                                     X_te_noisy = add_noise(X_te, noise)
+                                     noisy = expl_fn(model, X_tr, X_te_noisy, task_type=st.session_state.auto_task_type)
+                                     
+                                     s_stab = spearman_stability(base, noisy)
+                                     s_jac = top_k_jaccard(base, noisy)
+                                     
+                                     # Performance Metrics & Viz Data
+                                     y_pred = model.predict(X_te)
+                                     y_prob = None
+                                     if st.session_state.auto_task_type == "classification" and hasattr(model, "predict_proba"):
+                                         try:
+                                             y_prob = model.predict_proba(X_te)[:, 1] # Binary prob for pos class
+                                             # Handle multiclass later if needed, assume binary for ROC/PR simplicity now or take max
+                                             if model.classes_.shape[0] > 2:
+                                                 # For multiclass, we might just store all probs or skip ROC for now
+                                                 y_prob = model.predict_proba(X_te)
+                                         except: pass
+
+                                     perf_metrics = {}
+                                     if st.session_state.auto_task_type == "classification":
+                                         perf_metrics["Accuracy"] = accuracy_score(y_te, y_pred)
+                                         perf_metrics["F1 Score"] = f1_score(y_te, y_pred, average='weighted', zero_division=0)
+                                         perf_metrics["Precision"] = precision_score(y_te, y_pred, average='weighted', zero_division=0)
+                                         perf_metrics["Recall"] = recall_score(y_te, y_pred, average='weighted', zero_division=0)
+                                     else:
+                                         perf_metrics["RMSE"] = np.sqrt(mean_squared_error(y_te, y_pred))
+                                         perf_metrics["R2 Score"] = r2_score(y_te, y_pred)
+                                         perf_metrics["MAE"] = mean_absolute_error(y_te, y_pred)
+                                     
+                                     # SKLEARN Learning Curve (Sample Size) - Keep as secondary context
+                                     if lc_data is None:
+                                         try:
+                                             train_sizes, train_scores, test_scores = learning_curve(
+                                                 model, X_tr, y_tr, cv=3, n_jobs=-1, 
+                                                 train_sizes=np.linspace(0.1, 1.0, 5),
+                                                 scoring='accuracy' if st.session_state.auto_task_type == "classification" else 'neg_mean_squared_error'
+                                             )
+                                             lc_data = {
+                                                 "sizes": train_sizes,
+                                                 "train_mean": np.mean(train_scores, axis=1),
+                                                 "train_std": np.std(train_scores, axis=1),
+                                                 "test_mean": np.mean(test_scores, axis=1),
+                                                 "test_std": np.std(test_scores, axis=1)
+                                             }
+                                         except Exception as e:
+                                             lc_data = {"error": str(e)}
+
+                                     m_results.append({
+                                         "Seed": seed,
+                                         "Spearman Stability": s_stab,
+                                         "Top-k Jaccard": s_jac,
+                                         "Base Features": X_tr.columns.tolist(),
+                                         "Base Imp": base,
+                                         "Performance": perf_metrics
+                                     })
+                                     
+                                     # Cache Viz Data
+                                     viz_cache = {
+                                         "model": model, 
+                                         "X_te": X_te, "y_te": y_te, 
+                                         "y_pred": y_pred, "y_prob": y_prob,
+                                         "lc_data": lc_data,
+                                         "epoch_history": epoch_history
+                                     }
+                                     
+                                 except Exception as exc:
+                                     status.write(f"Failed {m_name}/{e_name}: {exc}")
+                                     success = False
+                                     failure_reason = str(exc)
                             
-                            X_scaled = s.fit_transform(X_prep)
-                            X_prep = pd.DataFrame(X_scaled, columns=X_prep.columns, index=X_prep.index)
+                             if success and m_results:
+                                 model_failed_completely = False
+                                 dur = time.time() - start_time
+                                 avg_s = np.mean([x["Spearman Stability"] for x in m_results])
+                                 avg_j = np.mean([x["Top-k Jaccard"] for x in m_results])
+                                 
+                                 # Avg Performance Metrics
+                                 avg_perf = {}
+                                 if st.session_state.auto_task_type == "classification":
+                                     avg_perf["Accuracy"] = np.mean([x["Performance"]["Accuracy"] for x in m_results])
+                                     avg_perf["F1 Score"] = np.mean([x["Performance"]["F1 Score"] for x in m_results])
+                                     avg_perf["Precision"] = np.mean([x["Performance"]["Precision"] for x in m_results])
+                                     avg_perf["Recall"] = np.mean([x["Performance"]["Recall"] for x in m_results])
+                                 else:
+                                     avg_perf["RMSE"] = np.mean([x["Performance"]["RMSE"] for x in m_results])
+                                     avg_perf["R2 Score"] = np.mean([x["Performance"]["R2 Score"] for x in m_results])
+                                     avg_perf["MAE"] = np.mean([x["Performance"]["MAE"] for x in m_results])
 
-                        # 7. Feature Selection
-                        if selection_k > 0 and selection_k < X_prep.shape[1]:
-                            # Needs target. Check task type.
-                            is_regression = pd.api.types.is_numeric_dtype(y_prep) and len(y_prep.unique()) > 20
-                            score_func = f_regression if is_regression else f_classif
-                            
-                            selector = SelectKBest(score_func=score_func, k=selection_k)
-                            X_new = selector.fit_transform(X_prep, y_prep)
-                            selected_indices = selector.get_support(indices=True)
-                            selected_cols = X_prep.columns[selected_indices]
-                            X_prep = pd.DataFrame(X_new, columns=selected_cols, index=X_prep.index)
-                            st.info(f"Selected top {selection_k} features: {selected_cols.tolist()}")
+                                 run_id = f"{m_name}_{e_name}_{len(st.session_state.experiment_history)}"
+                                 st.session_state.experiment_history.append({
+                                     "Run ID": run_id, "Model": m_name, "Explainer": e_name,
+                                     "Avg Spearman": avg_s, "Avg Jaccard": avg_j, "Duration (s)": dur,
+                                     "Performance": avg_perf,
+                                     "Raw Res": m_results, "Viz Cache": viz_cache
+                                 })
+                         
+                         if model_failed_completely:
+                             st.session_state.failed_models.append({"Model": m_name, "Reason": failure_reason})
 
-                        # Recombine for storage (optional, or just store X and y)
-                        # We store X_prep and y_prep separate or combined?
-                        # load_data currently expects a dataframe or path.
-                        # It splits X and y itself. So let's recombine.
-                        processed_data = X_prep.copy()
-                        processed_data[target_col] = y_prep.values
-                        
-                        st.session_state.processed_df = processed_data
-                        st.session_state.target_col = target_col
-                        
-                        st.success("Preprocessing Complete! Data saved for Experiment.")
-                        st.write("### Processed Data Preview")
-                        st.dataframe(processed_data.head())
-                        st.write(f"Shape: {processed_data.shape}")
-
-        # --- TAB 4: COMPARISONS & STATISTICS ---
-        with tab4:
-            st.header("4. Comparisons & Statistics")
+                     status.update(label="Analysis Complete!", state="complete", expanded=False)
             
-            if not st.session_state.experiment_history:
-                st.info("No experiments found in history. Run some experiments in the 'Consistency Experiment' tab first.")
-            else:
-                history_df = pd.DataFrame(st.session_state.experiment_history)
-                st.write("### Experiment History")
-                st.dataframe(history_df[["Run ID", "Model", "Explainer", "Avg Spearman", "Avg Jaccard", "Duration (s)"]])
+            status_container.success("Analysis Complete! See Results Below.")
+
+            # ==========================================
+            # 4. RESULTS DASHBOARD
+            # ==========================================
+            st.write("---")
+            st.header("5. Analysis Results Dashboard")
+            
+            # Display Failed Models Warning
+            if st.session_state.failed_models:
+                 st.error("⚠️ Incompatible Models Detected")
+                 st.caption("The following models failed to run on this dataset:")
+                 fail_df = pd.DataFrame(st.session_state.failed_models)
+                 st.dataframe(fail_df, hide_index=True)
+
+            if st.session_state.experiment_history:
+                res_df = pd.DataFrame(st.session_state.experiment_history)
                 
-                # 5. Compare Results sections
-                st.markdown("---")
-                st.header("5. Compare Results")
+                # Summary Table
+                st.subheader("Performance Summary")
+                st.dataframe(res_df[["Model", "Explainer", "Avg Spearman", "Avg Jaccard", "Duration (s)"]].style.background_gradient(cmap="Blues"))
                 
-                comp_col1, comp_col2 = st.columns(2)
+                # Performance Metrics Table
+                st.subheader("Model Accuracy Metrics")
+                perf_df_list = []
+                for entry in st.session_state.experiment_history:
+                    row = {"Model": entry["Model"], "Explainer": entry["Explainer"]}
+                    row.update(entry["Performance"])
+                    perf_df_list.append(row)
                 
-                with comp_col1:
-                    st.subheader("Model Performance Comparison")
-                    metric_to_plot = st.selectbox("Select Metric to Compare", ["Avg Spearman", "Avg Jaccard", "Duration (s)"])
+                perf_df = pd.DataFrame(perf_df_list)
+                st.dataframe(perf_df.style.background_gradient(cmap="Greens"))
+                
+                # Comparison Plots
+                c_plot1, c_plot2 = st.columns(2)
+                with c_plot1:
+                    st.write("**Stability Ranking (Spearman)**")
                     fig, ax = plt.subplots()
-                    sns.barplot(x="Model", y=metric_to_plot, hue="Explainer", data=history_df, ax=ax)
-                    plt.xticks(rotation=45)
+                    sns.barplot(data=res_df, x="Model", y="Avg Spearman", hue="Explainer", ax=ax, palette="mako")
+                    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
                     add_watermark(ax)
                     st.pyplot(fig)
                     
-                with comp_col2:
-                    st.subheader("Computational Complexity")
+                with c_plot2:
+                    st.write("**Computational Cost**")
                     fig, ax = plt.subplots()
-                    sns.barplot(x="Model", y="Duration (s)", data=history_df, ax=ax, palette="viridis")
-                    plt.xticks(rotation=45)
-                    plt.ylabel("Time (seconds)")
+                    sns.barplot(data=res_df, x="Model", y="Duration (s)", hue="Explainer", ax=ax, palette="Reds")
+                    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
                     add_watermark(ax)
                     st.pyplot(fig)
-
-                # 6. Statistical Validation
-                st.markdown("---")
-                st.header("6. Statistical Validation")
-                st.write("Perform hypothesis testing to check if the difference in stability between two models is statistically significant.")
                 
-                stat_col1, stat_col2 = st.columns(2)
+                # Deep Dive for ALL Models
+                st.write("---")
+                st.header("Detailed Analysis by Model")
                 
-                with stat_col1:
-                    model_a_id = st.selectbox("Select Model A (Control/Baseline)", history_df["Run ID"].unique(), key="mod_a")
-                    model_b_id = st.selectbox("Select Model B (Treatment/Proposed)", history_df["Run ID"].unique(), key="mod_b")
-                    
-                    target_metric_stat = st.selectbox("Metric for Testing", ["Spearman Stability", "Top-k Jaccard"])
-                    
-                with stat_col2:
-                    if st.button("Run Statistical Test"):
-                        # Retrieve raw data
-                        entry_a = next(item for item in st.session_state.experiment_history if item["Run ID"] == model_a_id)
-                        entry_b = next(item for item in st.session_state.experiment_history if item["Run ID"] == model_b_id)
+                if not res_df.empty:
+                    # Iterate through all results
+                    for idx, row in res_df.iterrows():
+                        m_name = row['Model']
+                        e_name = row['Explainer']
+                        score = row['Avg Spearman']
                         
-                        scores_a = [x[target_metric_stat] for x in entry_a["Raw Res"]]
-                        scores_b = [x[target_metric_stat] for x in entry_b["Raw Res"]]
-                        
-                        # T-Test
-                        t_stat, p_val = stats.ttest_ind(scores_a, scores_b)
-                        
-                        # Effect Size (Cohen's d)
-                        mean_diff = np.mean(scores_a) - np.mean(scores_b)
-                        pooled_std = np.sqrt((np.std(scores_a)**2 + np.std(scores_b)**2) / 2)
-                        cohens_d = mean_diff / pooled_std if pooled_std != 0 else 0
-                        
-                        st.write(f"### Results ({target_metric_stat})")
-                        st.metric("P-Value", f"{p_val:.5f}")
-                        st.metric("T-Statistic", f"{t_stat:.3f}")
-                        st.metric("Cohen's d (Effect Size)", f"{cohens_d:.3f}")
-                        
-                        if p_val < 0.05:
-                            st.success("Statistically Significant Difference (p < 0.05)!")
-                        else:
-                            st.warning("No Statistically Significant Difference (p >= 0.05).")
-                            
-                        # Confidence Intervals
-                        st.write("#### 95% Confidence Intervals")
-                        ci_a = stats.t.interval(0.95, len(scores_a)-1, loc=np.mean(scores_a), scale=stats.sem(scores_a))
-                        ci_b = stats.t.interval(0.95, len(scores_b)-1, loc=np.mean(scores_b), scale=stats.sem(scores_b))
-                        
-                        st.write(f"**{model_a_id}**: {ci_a}")
-                        st.write(f"**{model_b_id}**: {ci_b}")
-
-                # Robustness / Cross Model Evaluation
-                st.markdown("---")
-                st.subheader("Cross-Model Evaluation Matrix")
-                pivot_df = history_df.pivot_table(index="Model", columns="Explainer", values="Avg Spearman", aggfunc="mean")
-                st.dataframe(pivot_df)
-                fig, ax = plt.subplots()
-                sns.heatmap(pivot_df, annot=True, cmap="YlGnBu", ax=ax)
-                plt.title("Average Spearman Stability Matrix")
-                add_watermark(ax)
-                st.pyplot(fig)
-        # --- TAB 3: EXPERIMENT ---
-        with tab3:
-            st.header("3. Consistency Experiment")
-            
-            if st.session_state.processed_df is None:
-                st.warning("Please go to the 'Data Preprocessing' tab and click 'Apply' first.")
-                exp_df = df # Fallback to raw
-                exp_target = df.columns[0]
-            else:
-                st.success("Using Preprocessed Data")
-                exp_df = st.session_state.processed_df
-                exp_target = st.session_state.target_col
-
-            # Config inputs
-            st.info(f"Target Variable: **{exp_target}**")
-            target_col = exp_target # Override
-            
-            # --- MODEL SELECTION ---
-            task_type = st.sidebar.selectbox("Task Type", ["classification", "regression"])
-            
-            if task_type == "classification":
-                model_options = [
-                    "logistic", "random_forest", "decision_tree", "svm", "knn", "naive_bayes", 
-                    "gbm", "xgboost", "lightgbm", "adaboost", "extra_trees", "mlp", "dummy"
-                ]
-            else:
-                model_options = [
-                    "linear", "ridge", "lasso", "random_forest", "decision_tree", "svm", "knn", 
-                    "gbm", "xgboost", "lightgbm", "adaboost", "extra_trees", "mlp", "dummy"
-                ]
-            
-            model_type = st.sidebar.selectbox("Model Type", model_options)
-            explainer_type = st.sidebar.selectbox("Explanation Method", ["SHAP", "LIME"])
-            
-            noise_level = st.sidebar.slider("Noise Level", 0.0, 0.2, 0.02, 0.01)
-            num_seeds = st.sidebar.slider("Number of Random Seeds", 1, 10, 5)
-
-            run_btn = st.sidebar.button("Run Analysis")
-            
-            st.sidebar.markdown("---")
-            st.sidebar.caption("Made by TasfiaTahsinAnnita")
-
-            if run_btn:
-                st.warning("Running experiment... This may take a while depending on dataset size.")
-                
-                results_data = []
-                
-                progress_bar = st.progress(0)
-                
-                seeds = list(range(1, num_seeds + 1))
-                
-                start_time_all = time.time()
-                for i, seed in enumerate(seeds):
-                    try:
-                        loop_start = time.time()
-                        # Load and split data
-                        X_train, X_test, y_train, y_test = load_data(
-                            exp_df,
-                            target_col,
-                            seed
-                        )
-                        
-                        # Train model
-                        model = get_model(model_type, seed, task_type=task_type)
-                        model.fit(X_train, y_train)
-
-                        # Select Explainer
-                        explain_func = shap_explain if explainer_type == "SHAP" else lime_explain
-
-                        # Base Explanation
-                        # Pass task_type to explainer
-                        base_exp = explain_func(model, X_train, X_test, task_type=task_type)
-
-                        # Noisy Explanation
-                        X_test_noisy = add_noise(X_test, noise_level)
-                        noisy_exp = explain_func(model, X_train, X_test_noisy, task_type=task_type)
-
-                        # Calculate Metrics
-                        stability = spearman_stability(base_exp, noisy_exp)
-                        jaccard = top_k_jaccard(base_exp, noisy_exp)
-
-                        if i == 0:
-                            st.write(f"### Feature Importance ({explainer_type}) - Seed {seed} (Base vs Noisy)")
-                            
-                            # Create comparison dataframe
-                            feature_names = X_train.columns
-                            importance_df = pd.DataFrame({
-                                "Feature": feature_names,
-                                "Base Importance": base_exp,
-                                "Noisy Importance": noisy_exp
-                            }).sort_values(by="Base Importance", ascending=False).head(10)
-                            
-                            st.dataframe(importance_df)
-                            
-                            # Plot comparison
-                            fig, ax = plt.subplots(figsize=(10, 6))
-                            importance_df.set_index("Feature").plot(kind="bar", ax=ax)
-                            plt.title(f"Top 10 Feature Importances ({explainer_type})")
-                            plt.ylabel("Mean Absolute Value")
-                            add_watermark(ax)
-                            st.pyplot(fig)
-
-                            # --- NEW: Model Evaluation Visualizations ---
-                            st.subheader(f"Model Performance Analysis (Seed {seed})")
-                            col_eval1, col_eval2 = st.columns(2)
-                            
-                            if task_type == "classification":
-                                y_pred = model.predict(X_test)
-                                y_proba = model.predict_proba(X_test)[:, 1] if hasattr(model, "predict_proba") else None
+                        with st.expander(f"{m_name} + {e_name} (Stability: {score:.3f})", expanded=False):
+                            viz_data = row["Viz Cache"]
+                            if viz_data:
+                                # Get Data
+                                y_te = viz_data["y_te"]
+                                y_pred = viz_data["y_pred"]
+                                y_prob = viz_data["y_prob"]
+                                lc_data = viz_data.get("lc_data", None)
+                                loss_curve = viz_data.get("loss_curve", None)
                                 
-                                # 1. Confusion Matrix
-                                with col_eval1:
-                                    st.write("#### Confusion Matrix")
-                                    cm = confusion_matrix(y_test, y_pred)
-                                    fig, ax = plt.subplots()
-                                    ConfusionMatrixDisplay(confusion_matrix=cm).plot(ax=ax, cmap='Blues')
-                                    add_watermark(ax)
-                                    st.pyplot(fig)
-
-                                # 2. ROC & Precision-Recall (if proba available)
-                                with col_eval2:
-                                    if y_proba is not None:
-                                        st.write("#### ROC Curve")
-                                        fpr, tpr, _ = roc_curve(y_test, y_proba)
-                                        roc_auc = auc(fpr, tpr)
-                                        fig, ax = plt.subplots()
-                                        ax.plot(fpr, tpr, label=f'AUC = {roc_auc:.2f}')
-                                        ax.plot([0, 1], [0, 1], 'k--')
-                                        ax.set_xlabel('False Positive Rate')
-                                        ax.set_ylabel('True Positive Rate')
-                                        ax.legend(loc='lower right')
+                                # TABS for Visuals
+                                tab_perf, tab_diag, tab_train, tab_dist = st.tabs([
+                                    "Feature Importance & Matrix", 
+                                    "ROC & PR Curves", 
+                                    "Learning & Loss Curves",
+                                    "Prediction Distribution"
+                                ])
+                                
+                                # --- TAB 1: Main Performance ---
+                                with tab_perf:
+                                    col_d1, col_d2 = st.columns(2)
+                                    with col_d1:
+                                        st.write(f"**Feature Importance ({e_name})**")
+                                        f_names = row["Raw Res"][0]["Base Features"]
+                                        f_imps = row["Raw Res"][0]["Base Imp"]
+                                        fi_df = pd.DataFrame({"Feature": f_names, "Importance": f_imps}).sort_values("Importance", ascending=False).head(10)
+                                        fig, ax = plt.subplots(figsize=(6, 4))
+                                        sns.barplot(data=fi_df, y="Feature", x="Importance", ax=ax, palette="viridis")
                                         add_watermark(ax)
                                         st.pyplot(fig)
                                         
-                                        st.write("#### Precision-Recall Curve")
-                                        precision, recall, _ = precision_recall_curve(y_test, y_proba)
+                                    with col_d2:
+                                        if st.session_state.auto_task_type == "classification":
+                                            st.write("**Confusion Matrix**")
+                                            cm = confusion_matrix(y_te, y_pred)
+                                            fig, ax = plt.subplots(figsize=(4, 4))
+                                            sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax)
+                                            add_watermark(ax)
+                                            st.pyplot(fig)
+                                        else:
+                                            st.write("**Predicted vs Actual**")
+                                            fig, ax = plt.subplots(figsize=(4, 4))
+                                            sns.scatterplot(x=y_te, y=y_pred, ax=ax)
+                                            min_val = min(y_te.min(), y_pred.min())
+                                            max_val = max(y_te.max(), y_pred.max())
+                                            plt.plot([min_val, max_val], [min_val, max_val], 'r--')
+                                            add_watermark(ax)
+                                            st.pyplot(fig)
+
+                                # --- TAB 2: Diagnostics (ROC/PR) ---
+                                with tab_diag:
+                                    if st.session_state.auto_task_type == "classification" and y_prob is not None:
+                                        col_r1, col_r2 = st.columns(2)
+                                        # ROC Curve
+                                        with col_r1:
+                                            st.write("**ROC Curve**")
+                                            try:
+                                                # Check if binary or multiclass
+                                                if y_prob.ndim == 1 or y_prob.shape[1] == 1: # Binary
+                                                    fpr, tpr, _ = roc_curve(y_te, y_prob)
+                                                    roc_auc = auc(fpr, tpr)
+                                                    fig, ax = plt.subplots()
+                                                    ax.plot(fpr, tpr, label=f'AUC = {roc_auc:.2f}')
+                                                    ax.plot([0, 1], [0, 1], 'k--')
+                                                    ax.set_xlabel('False Positive Rate')
+                                                    ax.set_ylabel('True Positive Rate')
+                                                    ax.legend()
+                                                    add_watermark(ax)
+                                                    st.pyplot(fig)
+                                                else:
+                                                    st.info("Multiclass ROC not currently supported in this view.")
+                                            except Exception as e:
+                                                st.caption(f"Could not plot ROC: {e}")
+                                        
+                                        # PR Curve
+                                        with col_r2:
+                                            st.write("**Precision-Recall Curve**")
+                                            try:
+                                                if y_prob.ndim == 1 or y_prob.shape[1] == 1:
+                                                    precision, recall, _ = precision_recall_curve(y_te, y_prob)
+                                                    fig, ax = plt.subplots()
+                                                    ax.plot(recall, precision)
+                                                    ax.set_xlabel('Recall')
+                                                    ax.set_ylabel('Precision')
+                                                    add_watermark(ax)
+                                                    st.pyplot(fig)
+                                            except: pass
+                                    elif st.session_state.auto_task_type == "regression":
+                                        st.write("**Residual Plot**")
+                                        residuals = y_te - y_pred
                                         fig, ax = plt.subplots()
-                                        ax.plot(recall, precision)
-                                        ax.set_xlabel('Recall')
-                                        ax.set_ylabel('Precision')
+                                        sns.scatterplot(x=y_pred, y=residuals, ax=ax)
+                                        ax.axhline(0, color='r', linestyle='--')
+                                        ax.set_xlabel("Predicted")
+                                        ax.set_ylabel("Residuals")
                                         add_watermark(ax)
                                         st.pyplot(fig)
                                     else:
-                                        st.info("Probability scores not available for ROC/PR curves.")
-                            else: # Regression
-                                from sklearn.metrics import mean_squared_error, r2_score
-                                y_pred = model.predict(X_test)
-                                mse = mean_squared_error(y_test, y_pred)
-                                r2 = r2_score(y_test, y_pred)
-                                
-                                with col_eval1:
-                                    st.metric("MSE", f"{mse:.4f}")
-                                    st.metric("R2 Score", f"{r2:.4f}")
-                                
-                                with col_eval2:
-                                    st.write("#### Predicted vs Actual")
-                                    fig, ax = plt.subplots()
-                                    sns.scatterplot(x=y_test, y=y_pred, ax=ax)
-                                    min_val = min(y_test.min(), y_pred.min())
-                                    max_val = max(y_test.max(), y_pred.max())
-                                    ax.plot([min_val, max_val], [min_val, max_val], 'r--')
-                                    ax.set_xlabel("Actual")
-                                    ax.set_ylabel("Predicted")
-                                    add_watermark(ax)
-                                    st.pyplot(fig)
+                                        st.info("Probabilities not available for this model/task.")
 
-                            # 3. Learning Curve (Computationally expensive, use subset/cv=3)
-                            st.write("#### Learning Curve (Sample)")
-                            train_sizes, train_scores, test_scores = learning_curve(
-                                model, X_train, y_train, cv=3, n_jobs=-1, 
-                                train_sizes=np.linspace(0.1, 1.0, 5),
-                                scoring='accuracy' if task_type == 'classification' else 'neg_mean_squared_error'
-                            )
-                            
-                            train_mean = np.mean(train_scores, axis=1)
-                            test_mean = np.mean(test_scores, axis=1)
-                            
-                            fig, ax = plt.subplots()
-                            ax.plot(train_sizes, train_mean, 'o-', color="r", label="Training score")
-                            ax.plot(train_sizes, test_mean, 'o-', color="g", label="Cross-validation score")
-                            ax.set_xlabel("Training examples")
-                            ax.set_ylabel("Score")
-                            ax.legend(loc="best")
-                            add_watermark(ax)
-                            st.pyplot(fig)
+                                # --- TAB 3: Training Dynamics ---
+                                with tab_train:
+                                    col_t1, col_t2 = st.columns(2)
+                                    
+                                    with col_t1:
+                                        st.write("**Learning Curve (Sample Size)**")
+                                        if lc_data and "sizes" in lc_data:
+                                            fig, ax = plt.subplots()
+                                            ax.plot(lc_data["sizes"], lc_data["train_mean"], 'o-', color="r", label="Training score")
+                                            ax.plot(lc_data["sizes"], lc_data["test_mean"], 'o-', color="g", label="CV score")
+                                            ax.fill_between(lc_data["sizes"], lc_data["train_mean"] - lc_data["train_std"], 
+                                                            lc_data["train_mean"] + lc_data["train_std"], alpha=0.1, color="r")
+                                            ax.fill_between(lc_data["sizes"], lc_data["test_mean"] - lc_data["test_std"], 
+                                                            lc_data["test_mean"] + lc_data["test_std"], alpha=0.1, color="g")
+                                            ax.legend(loc="best")
+                                            ax.set_xlabel("Training Set Size")
+                                            ax.set_ylabel("Score")
+                                            add_watermark(ax)
+                                            st.pyplot(fig)
+                                        else:
+                                            st.info("Learning curve data not available.")
+                                            if lc_data and "error" in lc_data: st.caption(lc_data["error"])
 
-                        # Collect importance data for comprehensive plots
-                        results_data.append({
-                            "Seed": seed,
-                            "Spearman Stability": stability,
-                            "Top-k Jaccard": jaccard,
-                            "Base Importance": base_exp,
-                            "Noisy Importance": noisy_exp,
-                            "Features": X_train.columns.tolist()
-                        })
-                    
-                    except Exception as e:
-                        st.error(f"Error on seed {seed}: {e}")
-                
-                # Update progress
-                progress_bar.progress((i + 1) / len(seeds))
+                                    with col_t2:
+                                        st.write("**Training vs Epochs (Loss/Score)**")
+                                        epoch_hist = viz_data.get("epoch_history", {})
+                                        
+                                        if epoch_hist and "type" in epoch_hist:
+                                            fig, ax = plt.subplots()
+                                            
+                                            if epoch_hist["type"] == "boost":
+                                                # XGB/LGBM structure: data[dataset][metric] = list
+                                                data = epoch_hist["data"]
+                                                metrics = epoch_hist["metrics"]
+                                                # Usually validation_0 is Train, validation_1 is Test (if 2 sets passed)
+                                                # Keys depend on how fit was called. XGB default is validation_0, validation_1
+                                                
+                                                for d_name in data:
+                                                    for metric in metrics:
+                                                         label_name = "Train" if "0" in d_name else "Test"
+                                                         if metric in data[d_name]:
+                                                             vals = data[d_name][metric]
+                                                             ax.plot(vals, label=f"{label_name} {metric}")
+                                                
+                                                ax.set_xlabel("Epochs / Iterations")
+                                                ax.set_ylabel("Metric Value")
+                                                ax.legend()
+                                                
+                                            elif epoch_hist["type"] in ["sklearn_mlp", "sklearn_gbm"]:
+                                                loss = epoch_hist["loss"]
+                                                ax.plot(loss, label="Training Loss", color='red')
+                                                ax.set_xlabel("Iterations")
+                                                ax.set_ylabel("Loss")
+                                                ax.legend()
+                                            
+                                            add_watermark(ax)
+                                            st.pyplot(fig)
+                                        else:
+                                            # educational fallback
+                                            m_type = type(model).__name__
+                                            if "Forest" in m_type or "Tree" in m_type:
+                                                st.info(f"ℹ️ **{m_name}** ({m_type}) does not use 'epochs'. It builds decision trees by recursively splitting data, not by iterative looping.")
+                                            elif "Linear" in m_type or "Ridge" in m_type or "Lasso" in m_type:
+                                                st.info(f"ℹ️ **{m_name}** ({m_type}) solves a mathematical equation directly (Linear Algebra) to find the best fit. It does not train over epochs.")
+                                            elif "Neighbor" in m_type:
+                                                st.info(f"ℹ️ **{m_name}** ({m_type}) is 'Instance-based'. It memorizes training data and finds neighbors at prediction time. No training loop involved.")
+                                            else:
+                                                st.info(f"Epoch history not available for {m_name} ({m_type}) in this scikit-learn implementation.")
 
-                # Display Results
-                if results_data:
-                    results_df = pd.DataFrame(results_data)
-                    
-                    st.write(f"### Results per Seed ({explainer_type})")
-                    st.dataframe(results_df[["Seed", "Spearman Stability", "Top-k Jaccard"]])
+                                # --- TAB 4: Distributions ---
+                                with tab_dist:
+                                    col_ds1, col_ds2 = st.columns(2)
+                                    with col_ds1:
+                                        st.write("**Prediction Distribution**")
+                                        fig, ax = plt.subplots()
+                                        sns.histplot(y_pred, kde=True, ax=ax, color='purple', label='Predicted')
+                                        sns.histplot(y_te, kde=True, ax=ax, color='orange', label='Actual', alpha=0.4)
+                                        ax.legend()
+                                        add_watermark(ax)
+                                        st.pyplot(fig)
+                                    with col_ds2:
+                                        st.write("**Box Plot of Predictions**")
+                                        fig, ax = plt.subplots()
+                                        df_box = pd.DataFrame({"Actual": y_te, "Predicted": y_pred})
+                                        sns.boxplot(data=df_box, ax=ax)
+                                        add_watermark(ax)
+                                        st.pyplot(fig)
+            else:
+                st.warning("No results to display.")
 
-                    avg_stability = results_df["Spearman Stability"].mean()
-                    avg_jaccard = results_df["Top-k Jaccard"].mean()
-
-                    col1, col2 = st.columns(2)
-                    col1.metric("Average Spearman Stability", f"{avg_stability:.3f}")
-                    col2.metric("Average Top-k Jaccard", f"{avg_jaccard:.3f}")
-
-                    duration = time.time() - start_time_all
-                    
-                    # --- Save to History ---
-                    # Create a summary entry
-                    run_id = f"{model_type}_{explainer_type}_{len(st.session_state.experiment_history)}"
-                    history_entry = {
-                        "Run ID": run_id,
-                        "Model": model_type,
-                        "Explainer": explainer_type,
-                        "Task": task_type,
-                        "Noise": noise_level,
-                        "Avg Spearman": avg_stability,
-                        "Avg Jaccard": avg_jaccard,
-                        "Duration (s)": duration,
-                        "Raw Res": results_data
-                    }
-                    st.session_state.experiment_history.append(history_entry)
-                    st.success(f"Experiment saved to history as {run_id}")
-
-                    # Visualization Area
-                    st.write("---")
-                    st.header("Detailed Analysis")
-
-                    # 1. Consistency Metrics Plot
-                    st.write("### 1. Stability Metrics per Seed")
-                    fig, ax = plt.subplots()
-                    results_df.set_index("Seed")[["Spearman Stability", "Top-k Jaccard"]].plot(kind="bar", ax=ax)
-                    plt.ylim(0, 1.1)
-                    add_watermark(ax)
-                    st.pyplot(fig)
-                    
-                    # Prepare data for aggregated plots
-                    # We use the first valid seed's feature names
-                    feature_names = results_data[0]["Features"]
-                    
-                    # 2. Scatter Plot: Base vs Noisy Importance (All Seeds)
-                    st.write("### 2. Feature Stability Scatter (Base vs Noisy)")
-                    st.markdown("Points on the diagonal line indicate perfect stability. Deviations show instability.")
-                    
-                    scatter_data = []
-                    for res in results_data:
-                        for f, base, noisy in zip(res["Features"], res["Base Importance"], res["Noisy Importance"]):
-                            scatter_data.append({"Feature": f, "Base": base, "Noisy": noisy, "Seed": res["Seed"]})
-                    
-                    scatter_df = pd.DataFrame(scatter_data)
-                    
-                    fig, ax = plt.subplots(figsize=(8, 8))
-                    sns.scatterplot(data=scatter_df, x="Base", y="Noisy", hue="Feature", style="Seed", ax=ax)
-                    
-                    # Add diagonal line
-                    max_val = max(scatter_df["Base"].max(), scatter_df["Noisy"].max())
-                    ax.plot([0, max_val], [0, max_val], 'r--', alpha=0.5)
-                    ax.set_aspect('equal')
-                    add_watermark(ax)
-                    st.pyplot(fig)
-
-                    # 3. Rank Variation Plot (Bump Chart-ish)
-                    st.write("### 3. Feature Rank Changes (Base -> Noisy) [First Seed]")
-                    
-                    # Use only first seed for clarity
-                    first_seed_data = results_data[0]
-                    base_ranks = pd.Series(first_seed_data["Base Importance"], index=feature_names).rank(ascending=False)
-                    noisy_ranks = pd.Series(first_seed_data["Noisy Importance"], index=feature_names).rank(ascending=False)
-                    
-                    rank_df = pd.DataFrame({"Feature": feature_names, "Rank Base": base_ranks, "Rank Noisy": noisy_ranks})
-                    rank_df = rank_df.sort_values("Rank Base")
-                    
-                    # Take top 10 features for cleaner plot
-                    top_10_rank_df = rank_df.nsmallest(10, "Rank Base")
-
-                    fig, ax = plt.subplots(figsize=(10, 6))
-                    
-                    # Draw lines connecting ranks
-                    for idx, row in top_10_rank_df.iterrows():
-                        ax.plot([0, 1], [row["Rank Base"], row["Rank Noisy"]], marker='o', label=row["Feature"])
-                        
-                    ax.set_xticks([0, 1])
-                    ax.set_xticklabels(["Original Data", "Noisy Data"])
-                    ax.set_ylabel("Feature Rank (Lower is Better)")
-                    ax.invert_yaxis() # Rank 1 at top
-                    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-                    plt.title("Rank Stability of Top 10 Features")
-                    add_watermark(ax)
-                    st.pyplot(fig)
+        else:
+            st.info("Please select your Target Column above and click 'RUN FULL AUTOMATED ANALYSIS' to begin.")
 
     except Exception as e:
         st.error(f"Error processing file: {e}")
