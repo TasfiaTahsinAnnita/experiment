@@ -420,12 +420,12 @@ if uploaded_file is not None:
             if task_type == "classification":
                 model_options = [
                     "logistic", "random_forest", "decision_tree", "svm", "knn", "naive_bayes", 
-                    "gbm", "xgboost", "lightgbm", "catboost", "adaboost", "extra_trees", "mlp", "dummy"
+                    "gbm", "xgboost", "lightgbm", "adaboost", "extra_trees", "mlp", "dummy"
                 ]
             else:
                 model_options = [
                     "linear", "ridge", "lasso", "random_forest", "decision_tree", "svm", "knn", 
-                    "gbm", "xgboost", "lightgbm", "catboost", "adaboost", "extra_trees", "mlp", "dummy"
+                    "gbm", "xgboost", "lightgbm", "adaboost", "extra_trees", "mlp", "dummy"
                 ]
             
             model_type = st.sidebar.selectbox("Model Type", model_options)

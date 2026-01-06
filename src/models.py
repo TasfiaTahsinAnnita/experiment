@@ -10,7 +10,7 @@ from sklearn.cluster import KMeans, AgglomerativeClustering, DBSCAN
 from sklearn.mixture import GaussianMixture
 import xgboost as xgb
 import lightgbm as lgb
-import catboost as cb
+# import catboost as cb # Disabled due to build error on Windows without Visual Studio
 
 def get_model(model_name, seed, task_type="classification"):
     random_state = seed
@@ -35,8 +35,8 @@ def get_model(model_name, seed, task_type="classification"):
             return xgb.XGBClassifier(random_state=random_state, eval_metric='logloss')
         elif model_name == "lightgbm":
             return lgb.LGBMClassifier(random_state=random_state, verbose=-1)
-        elif model_name == "catboost":
-            return cb.CatBoostClassifier(random_state=random_state, verbose=0)
+        # elif model_name == "catboost":
+        #    return cb.CatBoostClassifier(random_state=random_state, verbose=0)
         elif model_name == "adaboost":
             return AdaBoostClassifier(random_state=random_state)
         elif model_name == "extra_trees":
@@ -68,8 +68,8 @@ def get_model(model_name, seed, task_type="classification"):
             return xgb.XGBRegressor(random_state=random_state)
         elif model_name == "lightgbm":
             return lgb.LGBMRegressor(random_state=random_state, verbose=-1)
-        elif model_name == "catboost":
-            return cb.CatBoostRegressor(random_state=random_state, verbose=0)
+        # elif model_name == "catboost":
+        #    return cb.CatBoostRegressor(random_state=random_state, verbose=0)
         elif model_name == "adaboost":
             return AdaBoostRegressor(random_state=random_state)
         elif model_name == "extra_trees":
