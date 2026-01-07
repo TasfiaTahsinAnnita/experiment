@@ -590,7 +590,7 @@ if uploaded_file is not None:
                                     
                                     with col_t1:
                                         st.write("**Learning Curve (Sample Size)**")
-                                        if lc_data and "sizes" in lc_data:
+                                        if isinstance(lc_data, dict) and "sizes" in lc_data:
                                             fig, ax = plt.subplots()
                                             ax.plot(lc_data["sizes"], lc_data["train_mean"], 'o-', color="r", label="Training score")
                                             ax.plot(lc_data["sizes"], lc_data["test_mean"], 'o-', color="g", label="CV score")
@@ -621,7 +621,7 @@ if uploaded_file is not None:
                                                     data = epoch_hist["data"]
                                                     metrics = epoch_hist["metrics"]
                                                     for d_name in data:
-                                                        # Ensure we are working with a dictionary (expected structure)
+                                                        # Safeguard: Ensure data[d_name] is a dict before checking membership
                                                         if isinstance(data[d_name], dict):
                                                             for metric in metrics:
                                                                  label_name = "Train" if "0" in d_name else "Test"
