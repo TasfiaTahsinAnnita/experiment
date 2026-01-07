@@ -797,28 +797,17 @@ if uploaded_file is not None:
                                                 
                                                 st.caption(f"AdaBoost: Top {len(top_indices)} Most Influential Trees (Highest Weights)")
                                                 
-                                                cols = st.columns(len(top_indices))
-                                                
                                                 for i, idx in enumerate(top_indices):
                                                     learner = model.estimators_[idx]
                                                     w = weights[idx]
-                                                    with cols[i]:
-                                                        st.caption(f"Rank #{i+1} (Weight: {w:.4f})")
-                                                        fig, ax = plt.subplots(figsize=(8, 6))
-                                                        plot_tree(learner, feature_names=viz_data["X_te"].columns, filled=True, ax=ax, fontsize=8)
-                                                        ax.set_title(f"Learner #{idx}")
-                                                        st.pyplot(fig)
-                                                        plt.close(fig)
-
-                                                # Interactive Slider (Hidden)
-                                                with st.expander("🔎 Inspect All Learners"):
-                                                    n_ests = len(model.estimators_)
-                                                    tree_idx = st.slider(f"Select Learner (0-{n_ests-1})", 0, n_ests-1, 0, key=f"ada_slider_{m_name}")
-                                                    fig, ax = plt.subplots(figsize=(12, 8))
-                                                    plot_tree(model.estimators_[tree_idx], feature_names=viz_data["X_te"].columns, filled=True, ax=ax, fontsize=10)
-                                                    ax.set_title(f"Learner #{tree_idx} (Weight: {weights[tree_idx]:.4f})")
+                                                    
+                                                    st.markdown(f"**Rank #{i+1}** (Weight: {w:.4f}) - Tree Index: {idx}")
+                                                    fig, ax = plt.subplots(figsize=(10, 6))
+                                                    plot_tree(learner, feature_names=viz_data["X_te"].columns, filled=True, ax=ax, fontsize=10)
+                                                    ax.set_title(f"AdaBoost Learner #{idx}")
                                                     st.pyplot(fig)
                                                     plt.close(fig)
+                                                    st.write("---")
 
                                             else:
                                                 st.info("Estimators or weights not accessible for visualization.")
