@@ -73,36 +73,54 @@ if uploaded_file is not None:
             target_col = st.selectbox("Select Target Column", df.columns)
             st.session_state.target_col = target_col
             
-        with col_setup2:
-            st.write("**Configuration**")
             # Heuristic for task type
             is_numeric = pd.api.types.is_numeric_dtype(df[target_col])
             recommended_task = "regression" if is_numeric and df[target_col].nunique() > 20 else "classification"
             task_type = st.selectbox("Task Type", ["classification", "regression"], index=0 if recommended_task=="classification" else 1)
+
+        with col_setup2:
+            st.write("**Configuration**")
             
-            # Models for automated run - USE ALL AVAILABLE
+            # Define Model Lists
             if task_type == "classification":
-                default_models = [
+                # Removed: svm, extra_trees, dummy, knn
+                all_models = [
                     "logistic", "random_forest", "xgboost", "lightgbm", "decision_tree", 
-                    "svm", "knn", "naive_bayes", "gbm", "adaboost", "extra_trees", "mlp", "dummy"
+                    "naive_bayes", "gbm", "adaboost", "mlp"
                 ]
+                # Default "Core" models (Fast & Robust)
+                default_selection = ["logistic", "random_forest", "xgboost", "decision_tree"]
             else:
-                default_models = [
-                    "linear", "random_forest", "xgboost", "lightgbm", "ridge", "lasso", 
-                    "decision_tree", "svm", "knn", "gbm", "adaboost", "extra_trees", "mlp", "dummy"
+                # Removed: svm, knn, dummy, extra_trees, ridge, lasso
+                all_models = [
+                    "linear", "random_forest", "xgboost", "lightgbm", 
+                    "decision_tree", "gbm", "adaboost", "mlp"
                 ]
+                default_selection = ["linear", "random_forest", "xgboost", "decision_tree"]
                 
-            run_analysis_btn = st.button("RUN FULL AUTOMATED ANALYSIS", type="primary", use_container_width=True)
+            # Allow User Selection to control load
+            selected_models = st.multiselect("Select Models to Run", all_models, default=default_selection)
+            
+            # Allow Explainer Selection
+            selected_explainers = st.multiselect("Select Explainers", ["SHAP", "LIME"], default=["SHAP"])
+                
+            run_analysis_btn = st.button("RUN ANALYSIS", type="primary", use_container_width=True)
+            if len(selected_models) > 5 or len(selected_explainers) > 1:
+                st.caption("⚠️ Running many models/explainers may take a long time and consume high memory.")
 
         # --- EXECUTION LOGIC ---
         if run_analysis_btn:
-            st.session_state.has_run = True
-            st.session_state.auto_task_type = task_type
-            st.session_state.auto_models = default_models
-            # Clear previous run results
-            st.session_state.experiment_history = []
-            st.session_state.failed_models = [] # New list for tracking failures
-            st.session_state.processed_df = None
+            if not selected_models:
+                st.error("Please select at least one model.")
+            else:
+                st.session_state.has_run = True
+                st.session_state.auto_task_type = task_type
+                st.session_state.auto_models = selected_models
+                st.session_state.auto_explainers = selected_explainers
+                # Clear previous run results
+                st.session_state.experiment_history = []
+                st.session_state.failed_models = [] 
+                st.session_state.processed_df = None
 
         if st.session_state.get("has_run", False):
             st.divider()
@@ -199,20 +217,13 @@ if uploaded_file is not None:
             if not st.session_state.experiment_history and not st.session_state.failed_models:
                  with st.status("Step 4: Training Models & Generating Explanations...", expanded=True) as status:
                      models = st.session_state.auto_models
-                     explainers = ["SHAP"] # Default to SHAP for speed since we have MANY models now. LIME is slow.
-                     # Let the user add LIME manually if they want, or we can add it back if they insist.
-                     # "All models" implies we should probably run the default explainer.
-                     # Running 2 explainers * 14 models * 2 seeds = 56 runs. That's a lot.
-                     # Let's stick to SHAP as primary for speed, unless user didn't specify.
-                     # Actually, to be thorough, let's keep both but warn it takes time.
-                     explainers = ["SHAP", "LIME"]
+                     explainers = st.session_state.get("auto_explainers", ["SHAP"])
                      
                      seeds = [1, 2] 
                      noise = 0.05
                      
                      for m_name in models:
-                         # We treat the model as the unit of failure. If it fails for SHAP, it probably fails for LIME.
-                         # But let's try both.
+                         # We treat the model as the unit of failure.
                          model_failed_completely = True
                          failure_reason = ""
 
