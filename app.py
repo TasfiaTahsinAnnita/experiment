@@ -490,6 +490,8 @@ if uploaded_file is not None:
                                 y_prob = viz_data["y_prob"]
                                 lc_data = viz_data.get("lc_data", None)
                                 loss_curve = viz_data.get("loss_curve", None)
+                                # CRITICAL FIX: Ensure 'model' is in scope for visualizations
+                                model = viz_data.get("model", None)
                                 
                                 # TABS for Visuals
                                 tab_perf, tab_diag, tab_train, tab_dist = st.tabs([
@@ -508,9 +510,10 @@ if uploaded_file is not None:
                                         f_imps = row["Raw Res"][0]["Base Imp"]
                                         fi_df = pd.DataFrame({"Feature": f_names, "Importance": f_imps}).sort_values("Importance", ascending=False).head(10)
                                         fig, ax = plt.subplots(figsize=(6, 4))
-                                        sns.barplot(data=fi_df, y="Feature", x="Importance", ax=ax, palette="viridis")
+                                        sns.barplot(data=fi_df, y="Feature", x="Importance", hue="Feature", legend=False, ax=ax, palette="viridis")
                                         add_watermark(ax)
                                         st.pyplot(fig)
+                                        plt.close(fig)
                                         
                                     with col_d2:
                                         if st.session_state.auto_task_type == "classification":
@@ -658,10 +661,11 @@ if uploaded_file is not None:
                                                 # Sort for better visibility
                                                 indices = np.argsort(np.abs(coefs))[::-1][:15] # Top 15
                                                 
-                                                sns.barplot(x=coefs[indices], y=np.array(feat_names)[indices], ax=ax, palette="viridis")
+                                                sns.barplot(x=coefs[indices], y=np.array(feat_names)[indices], hue=np.array(feat_names)[indices], legend=False, ax=ax, palette="viridis")
                                                 ax.set_title("Top Model Coefficients")
                                                 add_watermark(ax)
                                                 st.pyplot(fig)
+                                                plt.close(fig)
                                             else:
                                                 st.info("Coefficients not available.")
 
