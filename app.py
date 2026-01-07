@@ -637,44 +637,76 @@ if uploaded_file is not None:
                                             st.pyplot(fig)
 
                                         # 2. Linear Models (Coefficients)
-                                        elif hasattr(model, "coef_"):
+                                        # Strict Type Check First to avoid ambiguity
+                                        elif "Linear" in str(type(model)) or "Logistic" in str(type(model)) or "Ridge" in str(type(model)) or "Lasso" in str(type(model)):
                                             st.caption("Linear Model Weights (Coefficients)")
-                                            coefs = model.coef_
-                                            if params := getattr(model, "feature_names_in_", None):
-                                                feat_names = params
-                                            elif hasattr(viz_data["X_te"], "columns"):
-                                                feat_names = viz_data["X_te"].columns
+                                            if hasattr(model, "coef_"):
+                                                coefs = model.coef_
+                                                if params := getattr(model, "feature_names_in_", None):
+                                                    feat_names = params
+                                                elif hasattr(viz_data["X_te"], "columns"):
+                                                    feat_names = viz_data["X_te"].columns
+                                                else:
+                                                    feat_names = [f"Feat {i}" for i in range(len(coefs.flatten()))]
+                                                
+                                                # Handle multi-class coefs (e.g. LogisticReg)
+                                                if coefs.ndim > 1:
+                                                     # Just plot the first class or average magnitude
+                                                     coefs = coefs[0]
+                                                
+                                                fig, ax = plt.subplots(figsize=(10, 6))
+                                                # Sort for better visibility
+                                                indices = np.argsort(np.abs(coefs))[::-1][:15] # Top 15
+                                                
+                                                sns.barplot(x=coefs[indices], y=np.array(feat_names)[indices], ax=ax, palette="viridis")
+                                                ax.set_title("Top Model Coefficients")
+                                                add_watermark(ax)
+                                                st.pyplot(fig)
                                             else:
-                                                feat_names = [f"Feat {i}" for i in range(len(coefs.flatten()))]
-                                            
-                                            # Handle multi-class coefs (e.g. LogisticReg)
-                                            if coefs.ndim > 1:
-                                                 # Just plot the first class or average magnitude
-                                                 coefs = coefs[0]
-                                            
-                                            fig, ax = plt.subplots(figsize=(6, 4))
-                                            # Sort for better visibility
-                                            indices = np.argsort(np.abs(coefs))[::-1][:15] # Top 15
-                                            
-                                            sns.barplot(x=coefs[indices], y=np.array(feat_names)[indices], ax=ax, palette="viridis")
-                                            ax.set_title("Top Model Coefficients")
-                                            add_watermark(ax)
+                                                st.info("Coefficients not available.")
+
+                                        # 3. Tree Models (Tree Viz - Single Tree)
+                                        elif hasattr(model, "tree_"): 
+                                            from sklearn.tree import plot_tree
+                                            st.caption("Decision Tree Structure")
+                                            fig, ax = plt.subplots(figsize=(20, 10))
+                                            plot_tree(model, max_depth=3, feature_names=viz_data["X_te"].columns, filled=True, ax=ax, fontsize=10)
+                                            ax.set_title("Tree Visualization (Depth Limited)")
                                             st.pyplot(fig)
                                             
-                                        # 3. Tree Models (Tree Viz)
-                                        elif hasattr(model, "tree_") or (hasattr(model, "estimators_") and hasattr(model.estimators_[0], "tree_")):
+                                        # 4. Random Forest / Extra Trees (First Tree fallback, or similar to AdaBoost?)
+                                        # Keeping it simple for now as RF has many trees too.
+                                        elif hasattr(model, "estimators_") and not "AdaBoost" in str(type(model)):
                                             from sklearn.tree import plot_tree
-                                            st.caption("Decision Tree Structure (First Tree)")
-                                            
-                                            # Get the tree object
-                                            target_tree = model if hasattr(model, "tree_") else model.estimators_[0]
-                                            
+                                            st.caption("Random Forest: Visualization of the 1st Tree (from Forest)")
+                                            first_tree = model.estimators_[0]
                                             fig, ax = plt.subplots(figsize=(20, 10))
-                                            plot_tree(target_tree, max_depth=3, feature_names=viz_data["X_te"].columns, filled=True, ax=ax, fontsize=10)
-                                            ax.set_title("Tree Visualization (Depth Limited to 3)")
+                                            plot_tree(first_tree, max_depth=3, feature_names=viz_data["X_te"].columns, filled=True, ax=ax, fontsize=10)
+                                            ax.set_title("Forest Tree #0")
                                             st.pyplot(fig)
 
-                                        # 4. XGBoost / LightGBM Tree Viz
+                                        # ... XGB/LGBM/NB blocks follow ...
+
+                                        # 7. AdaBoost Viz (With Slider for ALL learners)
+                                        elif "AdaBoost" in str(type(model)):
+                                            from sklearn.tree import plot_tree
+                                            
+                                            # Check if base estimators are trees
+                                            if hasattr(model, "estimators_") and len(model.estimators_) > 0:
+                                                n_ests = len(model.estimators_)
+                                                st.caption(f"AdaBoost Ensemble: {n_ests} Weak Learners.")
+                                                
+                                                # SLIDER to pick tree
+                                                tree_idx = st.slider(f"Select Learner (0-{n_ests-1})", 0, n_ests-1, 0, key=f"ada_slider_{m_name}")
+                                                
+                                                target_stump = model.estimators_[tree_idx]
+                                                
+                                                fig, ax = plt.subplots(figsize=(12, 8))
+                                                plot_tree(target_stump, feature_names=viz_data["X_te"].columns, filled=True, ax=ax, fontsize=10)
+                                                ax.set_title(f"AdaBoost Weak Learner #{tree_idx}")
+                                                st.pyplot(fig)
+                                            else:
+                                                st.info("Estimators not accessible for visualization.")
                                         elif "XGB" in str(type(model)):
                                             import xgboost as xgb
                                             st.caption("XGBoost Tree Structure (First Tree)")
