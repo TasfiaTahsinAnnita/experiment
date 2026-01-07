@@ -686,13 +686,65 @@ if uploaded_file is not None:
                                         
                                         elif "LGBM" in str(type(model)):
                                             import lightgbm as lgb
-                                            st.caption("LightGBM Tree Structure (First Tree)")
-                                            fig, ax = plt.subplots(figsize=(20, 10))
-                                            lgb.plot_tree(model, tree_index=0, ax=ax, show_info=['split_gain', 'internal_value', 'internal_count', 'leaf_count'])
-                                            ax.set_title("LightGBM Tree 0")
+                                            st.caption("LightGBM Structure")
+                                            try:
+                                                # Try Tree Viz first (Requires Graphviz)
+                                                fig, ax = plt.subplots(figsize=(20, 10))
+                                                lgb.plot_tree(model, tree_index=0, ax=ax, show_info=['split_gain', 'internal_value', 'internal_count', 'leaf_count'])
+                                                ax.set_title("LightGBM Tree 0")
+                                                st.pyplot(fig)
+                                            except Exception as e:
+                                                # Fallback to Importance if Graphviz is missing
+                                                st.warning(f"Tree viz unavailable (Graphviz missing?). Showing Split Importance instead.")
+                                                fig, ax = plt.subplots(figsize=(10, 6))
+                                                lgb.plot_importance(model, ax=ax, importance_type='split', max_num_features=15)
+                                                ax.set_title("LightGBM Feature Splits (Importance)")
+                                                st.pyplot(fig)
+                                        
+                                        # 5. Naive Bayes (Gaussian Viz)
+                                        elif "GaussianNB" in str(type(model)):
+                                            input_num_cols = viz_data["X_te"].shape[1]
+                                            feat_names = viz_data["X_te"].columns
+                                            
+                                            st.caption("Naive Bayes: Learned Gaussian Distributions (per Class)")
+                                            
+                                            # GaussianNB stores mean in theta_ and variance in var_
+                                            means = model.theta_ # Shape: (n_classes, n_features)
+                                            vars_ = model.var_  # Shape: (n_classes, n_features)
+                                            classes = model.classes_
+                                            
+                                            # Plot top 4 features (or less)
+                                            n_feats_to_plot = min(input_num_cols, 4)
+                                            
+                                            fig, axes = plt.subplots(1, n_feats_to_plot, figsize=(5*n_feats_to_plot, 4))
+                                            if n_feats_to_plot == 1: axes = [axes]
+                                            
+                                            from scipy.stats import norm
+                                            
+                                            for idx in range(n_feats_to_plot):
+                                                ax = axes[idx]
+                                                f_name = feat_names[idx]
+                                                
+                                                # Determine range for x-axis
+                                                all_means = means[:, idx]
+                                                all_stds = np.sqrt(vars_[:, idx])
+                                                x_min = (all_means - 3*all_stds).min()
+                                                x_max = (all_means + 3*all_stds).max()
+                                                x = np.linspace(x_min, x_max, 100)
+                                                
+                                                for c_i, c_val in enumerate(classes):
+                                                    mu = means[c_i, idx]
+                                                    sigma = np.sqrt(vars_[c_i, idx])
+                                                    y_pdf = norm.pdf(x, mu, sigma)
+                                                    ax.plot(x, y_pdf, label=f"Class {c_val}")
+                                                    ax.fill_between(x, y_pdf, alpha=0.2)
+                                                
+                                                ax.set_title(f"Feature: {f_name}")
+                                                if idx == 0: ax.legend()
+                                            
                                             st.pyplot(fig)
 
-                                        # 5. Fallback
+                                        # 6. Fallback
                                         else:
                                             m_type = type(model).__name__
                                             if "Neighbor" in m_type:
