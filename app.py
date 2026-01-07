@@ -213,7 +213,29 @@ if uploaded_file is not None:
             # ==========================================
             # 3. EXPERIMENT EXECUTION
             # ==========================================
-            processed_data = st.session_state.processed_df
+            processed_data = st.session_state.processed_df.copy() # Work on a copy to avoid mutation issues
+            
+            # FORCE DATA VALIDATION FOR CLASSIFICATION
+            # (Fixes XGBoost stale cache issue where Y might still have gaps)
+            if st.session_state.auto_task_type == "classification":
+                 try:
+                     from sklearn.preprocessing import LabelEncoder
+                     le_force = LabelEncoder()
+                     # Fit transform on the specific column
+                     y_enc = le_force.fit_transform(processed_data[target_col].astype(str)) # casting to str ensures consistent type
+                     processed_data[target_col] = y_enc
+                     
+                     # Verify encoding
+                     # valid_y = np.unique(y_enc)
+                     # if len(valid_y) != valid_y.max() + 1:
+                     #    st.warning(f"Label Encoding check: Gaps still detected? {valid_y}")
+                     
+                 except Exception as e:
+                     st.error(f"Failed to encode target: {e}")
+
+            # Define X and y
+            X = processed_data.drop(columns=[target_col])
+            y = processed_data[target_col]
             
             # Initialise failure list if not present
             if "failed_models" not in st.session_state:
