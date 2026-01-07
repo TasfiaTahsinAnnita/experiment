@@ -703,6 +703,7 @@ if uploaded_file is not None:
                                         
                                         # 5. Naive Bayes (Gaussian Viz)
                                         elif "GaussianNB" in str(type(model)):
+                                            # ... existing NB code ...
                                             input_num_cols = viz_data["X_te"].shape[1]
                                             feat_names = viz_data["X_te"].columns
                                             
@@ -743,8 +744,23 @@ if uploaded_file is not None:
                                                 if idx == 0: ax.legend()
                                             
                                             st.pyplot(fig)
+                                        
+                                        # 6. AdaBoost Viz
+                                        elif "AdaBoost" in str(type(model)):
+                                            from sklearn.tree import plot_tree
+                                            st.caption("AdaBoost: Visualization of the 1st Weak Learner (Tree/Stump)")
+                                            
+                                            # Check if base estimators are trees
+                                            if hasattr(model, "estimators_") and len(model.estimators_) > 0:
+                                                first_stump = model.estimators_[0]
+                                                fig, ax = plt.subplots(figsize=(10, 6))
+                                                plot_tree(first_stump, feature_names=viz_data["X_te"].columns, filled=True, ax=ax, fontsize=10)
+                                                ax.set_title("AdaBoost Weak Learner #1")
+                                                st.pyplot(fig)
+                                            else:
+                                                st.info("Estimators not accessible for visualization.")
 
-                                        # 6. Fallback
+                                        # 7. Fallback
                                         else:
                                             m_type = type(model).__name__
                                             if "Neighbor" in m_type:
