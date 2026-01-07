@@ -651,7 +651,8 @@ if uploaded_file is not None:
                                             st.caption("Linear Model Weights (Coefficients)")
                                             if hasattr(model, "coef_"):
                                                 coefs = model.coef_
-                                                if params := getattr(model, "feature_names_in_", None):
+                                                params = getattr(model, "feature_names_in_", None)
+                                                if params is not None:
                                                     feat_names = params
                                                 elif hasattr(viz_data["X_te"], "columns"):
                                                     feat_names = viz_data["X_te"].columns
