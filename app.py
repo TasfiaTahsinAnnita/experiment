@@ -777,20 +777,7 @@ if uploaded_file is not None:
                                             
                                             st.pyplot(fig)
                                         
-                                        # 6. AdaBoost Viz
-                                        elif "AdaBoost" in str(type(model)):
-                                            from sklearn.tree import plot_tree
-                                            st.caption("AdaBoost: Visualization of the 1st Weak Learner (Tree/Stump)")
-                                            
-                                            # Check if base estimators are trees
-                                            if hasattr(model, "estimators_") and len(model.estimators_) > 0:
-                                                first_stump = model.estimators_[0]
-                                                fig, ax = plt.subplots(figsize=(10, 6))
-                                                plot_tree(first_stump, feature_names=viz_data["X_te"].columns, filled=True, ax=ax, fontsize=10)
-                                                ax.set_title("AdaBoost Weak Learner #1")
-                                                st.pyplot(fig)
-                                            else:
-                                                st.info("Estimators not accessible for visualization.")
+                                        # (Duplicate AdaBoost block removed)
 
                                         # 7. Fallback
                                         else:
