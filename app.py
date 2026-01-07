@@ -699,25 +699,7 @@ if uploaded_file is not None:
                                         # ... XGB/LGBM/NB blocks follow ...
 
                                         # 7. AdaBoost Viz (With Slider for ALL learners)
-                                        elif "AdaBoost" in str(type(model)):
-                                            from sklearn.tree import plot_tree
-                                            
-                                            # Check if base estimators are trees
-                                            if hasattr(model, "estimators_") and len(model.estimators_) > 0:
-                                                n_ests = len(model.estimators_)
-                                                st.caption(f"AdaBoost Ensemble: {n_ests} Weak Learners.")
-                                                
-                                                # SLIDER to pick tree
-                                                tree_idx = st.slider(f"Select Learner (0-{n_ests-1})", 0, n_ests-1, 0, key=f"ada_slider_{m_name}")
-                                                
-                                                target_stump = model.estimators_[tree_idx]
-                                                
-                                                fig, ax = plt.subplots(figsize=(12, 8))
-                                                plot_tree(target_stump, feature_names=viz_data["X_te"].columns, filled=True, ax=ax, fontsize=10)
-                                                ax.set_title(f"AdaBoost Weak Learner #{tree_idx}")
-                                                st.pyplot(fig)
-                                            else:
-                                                st.info("Estimators not accessible for visualization.")
+                                        # (Old AdaBoost block removed to prioritize Top 3 logic below)
                                         elif "XGB" in str(type(model)):
                                             import xgboost as xgb
                                             st.caption("XGBoost Tree Structure (First Tree)")
