@@ -202,6 +202,12 @@ if uploaded_file is not None:
                     if feats:
                         temp_df[feats] = scaler.fit_transform(temp_df[feats])
                     
+                    # Fix for XGBoost/LightGBM: Ensure Classification Targets are encoded 0..N-1
+                    if task_type == "classification":
+                        from sklearn.preprocessing import LabelEncoder
+                        le = LabelEncoder()
+                        temp_df[target_col] = le.fit_transform(temp_df[target_col])
+                    
                     st.session_state.processed_df = temp_df
                     
             # ==========================================
@@ -577,26 +583,23 @@ if uploaded_file is not None:
                                             if lc_data and "error" in lc_data: st.caption(lc_data["error"])
 
                                     with col_t2:
-                                        st.write("**Training vs Epochs (Loss/Score)**")
+                                        st.write("**Model Internal Structure / Training Loss**")
                                         epoch_hist = viz_data.get("epoch_history", {})
                                         
+                                        # 1. Iterative Models (Loss Curves)
                                         if epoch_hist and "type" in epoch_hist:
+                                            # ... existing loss curve plotting ...
                                             fig, ax = plt.subplots()
                                             
                                             if epoch_hist["type"] == "boost":
-                                                # XGB/LGBM structure: data[dataset][metric] = list
                                                 data = epoch_hist["data"]
                                                 metrics = epoch_hist["metrics"]
-                                                # Usually validation_0 is Train, validation_1 is Test (if 2 sets passed)
-                                                # Keys depend on how fit was called. XGB default is validation_0, validation_1
-                                                
                                                 for d_name in data:
                                                     for metric in metrics:
                                                          label_name = "Train" if "0" in d_name else "Test"
                                                          if metric in data[d_name]:
                                                              vals = data[d_name][metric]
                                                              ax.plot(vals, label=f"{label_name} {metric}")
-                                                
                                                 ax.set_xlabel("Epochs / Iterations")
                                                 ax.set_ylabel("Metric Value")
                                                 ax.legend()
@@ -610,17 +613,52 @@ if uploaded_file is not None:
                                             
                                             add_watermark(ax)
                                             st.pyplot(fig)
-                                        else:
-                                            # educational fallback
-                                            m_type = type(model).__name__
-                                            if "Forest" in m_type or "Tree" in m_type:
-                                                st.info(f"ℹ️ **{m_name}** ({m_type}) does not use 'epochs'. It builds decision trees by recursively splitting data, not by iterative looping.")
-                                            elif "Linear" in m_type or "Ridge" in m_type or "Lasso" in m_type:
-                                                st.info(f"ℹ️ **{m_name}** ({m_type}) solves a mathematical equation directly (Linear Algebra) to find the best fit. It does not train over epochs.")
-                                            elif "Neighbor" in m_type:
-                                                st.info(f"ℹ️ **{m_name}** ({m_type}) is 'Instance-based'. It memorizes training data and finds neighbors at prediction time. No training loop involved.")
+
+                                        # 2. Linear Models (Coefficients)
+                                        elif hasattr(model, "coef_"):
+                                            st.caption("Linear Model Weights (Coefficients)")
+                                            coefs = model.coef_
+                                            if params := getattr(model, "feature_names_in_", None):
+                                                feat_names = params
+                                            elif hasattr(viz_data["X_te"], "columns"):
+                                                feat_names = viz_data["X_te"].columns
                                             else:
-                                                st.info(f"Epoch history not available for {m_name} ({m_type}) in this scikit-learn implementation.")
+                                                feat_names = [f"Feat {i}" for i in range(len(coefs.flatten()))]
+                                            
+                                            # Handle multi-class coefs (e.g. LogisticReg)
+                                            if coefs.ndim > 1:
+                                                 # Just plot the first class or average magnitude
+                                                 coefs = coefs[0]
+                                            
+                                            fig, ax = plt.subplots(figsize=(6, 4))
+                                            # Sort for better visibility
+                                            indices = np.argsort(np.abs(coefs))[::-1][:15] # Top 15
+                                            
+                                            sns.barplot(x=coefs[indices], y=np.array(feat_names)[indices], ax=ax, palette="viridis")
+                                            ax.set_title("Top Model Coefficients")
+                                            add_watermark(ax)
+                                            st.pyplot(fig)
+                                            
+                                        # 3. Tree Models (Tree Viz)
+                                        elif hasattr(model, "tree_") or (hasattr(model, "estimators_") and hasattr(model.estimators_[0], "tree_")):
+                                            from sklearn.tree import plot_tree
+                                            st.caption("Decision Tree Structure (First Tree)")
+                                            
+                                            # Get the tree object
+                                            target_tree = model if hasattr(model, "tree_") else model.estimators_[0]
+                                            
+                                            fig, ax = plt.subplots(figsize=(12, 6))
+                                            plot_tree(target_tree, max_depth=3, feature_names=viz_data["X_te"].columns, filled=True, ax=ax, fontsize=8)
+                                            ax.set_title("Tree Visualization (Depth Limited)")
+                                            st.pyplot(fig)
+                                            
+                                        # 4. Fallback
+                                        else:
+                                            m_type = type(model).__name__
+                                            if "Neighbor" in m_type:
+                                                st.info(f"ℹ️ **{m_name}** is instance-based (KNN). It stores training data points directly. No internal weights or trees to visualize.")
+                                            else:
+                                                 st.info(f"Visual structure not available for {m_name}")
 
                                 # --- TAB 4: Distributions ---
                                 with tab_dist:
