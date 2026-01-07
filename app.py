@@ -617,14 +617,20 @@ if uploaded_file is not None:
                                             fig, ax = plt.subplots()
                                             
                                             if epoch_hist["type"] == "boost":
-                                                data = epoch_hist["data"]
-                                                metrics = epoch_hist["metrics"]
-                                                for d_name in data:
-                                                    for metric in metrics:
-                                                         label_name = "Train" if "0" in d_name else "Test"
-                                                         if metric in data[d_name]:
-                                                             vals = data[d_name][metric]
-                                                             ax.plot(vals, label=f"{label_name} {metric}")
+                                                try:
+                                                    data = epoch_hist["data"]
+                                                    metrics = epoch_hist["metrics"]
+                                                    for d_name in data:
+                                                        # Ensure we are working with a dictionary (expected structure)
+                                                        if isinstance(data[d_name], dict):
+                                                            for metric in metrics:
+                                                                 label_name = "Train" if "0" in d_name else "Test"
+                                                                 if metric in data[d_name]:
+                                                                     vals = data[d_name][metric]
+                                                                     ax.plot(vals, label=f"{label_name} {metric}")
+                                                except Exception as e:
+                                                    st.caption(f"Could not plot boost history: {e}")
+                                                
                                                 ax.set_xlabel("Epochs / Iterations")
                                                 ax.set_ylabel("Metric Value")
                                                 ax.legend()
