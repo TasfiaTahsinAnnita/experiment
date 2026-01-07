@@ -787,41 +787,41 @@ if uploaded_file is not None:
                                             
                                             st.pyplot(fig)
                                         
-                                        # 8. AdaBoost (Evolution Gallery)
+                                        # 8. AdaBoost (Top 3 Weighted Trees)
                                         elif "AdaBoost" in str(type(model)):
                                             from sklearn.tree import plot_tree
-                                            if hasattr(model, "estimators_") and len(model.estimators_) > 0:
-                                                n_ests = len(model.estimators_)
-                                                st.caption(f"AdaBoost Progression ({n_ests} Learners)")
+                                            if hasattr(model, "estimators_") and hasattr(model, "estimator_weights_") and len(model.estimators_) > 0:
+                                                weights = model.estimator_weights_
+                                                # Get indices of top 3 weights
+                                                top_indices = np.argsort(weights)[::-1][:3]
                                                 
-                                                # Static Gallery (PPT Style)
-                                                c_start, c_mid, c_end = st.columns(3)
+                                                st.caption(f"AdaBoost: Top {len(top_indices)} Most Influential Trees (Highest Weights)")
                                                 
-                                                # Helper to plot in a column
-                                                def plot_adaboost_tree(col, idx, title):
-                                                    with col:
-                                                        st.caption(title)
+                                                cols = st.columns(len(top_indices))
+                                                
+                                                for i, idx in enumerate(top_indices):
+                                                    learner = model.estimators_[idx]
+                                                    w = weights[idx]
+                                                    with cols[i]:
+                                                        st.caption(f"Rank #{i+1} (Weight: {w:.4f})")
                                                         fig, ax = plt.subplots(figsize=(8, 6))
-                                                        plot_tree(model.estimators_[idx], feature_names=viz_data["X_te"].columns, filled=True, ax=ax, fontsize=8)
+                                                        plot_tree(learner, feature_names=viz_data["X_te"].columns, filled=True, ax=ax, fontsize=8)
                                                         ax.set_title(f"Learner #{idx}")
                                                         st.pyplot(fig)
                                                         plt.close(fig)
 
-                                                plot_adaboost_tree(c_start, 0, "Start (First Learner)")
-                                                if n_ests > 1:
-                                                    plot_adaboost_tree(c_mid, n_ests//2, "Middle Stage")
-                                                    plot_adaboost_tree(c_end, n_ests-1, "Final Refinement")
-
-                                                # Interactive Slider (Hidden to prevent accidental reruns)
-                                                with st.expander("🔎 Inspect Specific Learner (Triggers Rerun)"):
+                                                # Interactive Slider (Hidden)
+                                                with st.expander("🔎 Inspect All Learners"):
+                                                    n_ests = len(model.estimators_)
                                                     tree_idx = st.slider(f"Select Learner (0-{n_ests-1})", 0, n_ests-1, 0, key=f"ada_slider_{m_name}")
                                                     fig, ax = plt.subplots(figsize=(12, 8))
                                                     plot_tree(model.estimators_[tree_idx], feature_names=viz_data["X_te"].columns, filled=True, ax=ax, fontsize=10)
-                                                    ax.set_title(f"AdaBoost Weak Learner #{tree_idx}")
+                                                    ax.set_title(f"Learner #{tree_idx} (Weight: {weights[tree_idx]:.4f})")
                                                     st.pyplot(fig)
                                                     plt.close(fig)
+
                                             else:
-                                                st.info("Estimators not accessible for visualization.")
+                                                st.info("Estimators or weights not accessible for visualization.")
 
                                         # 7. Fallback
                                         else:
