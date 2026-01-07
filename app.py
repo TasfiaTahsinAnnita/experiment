@@ -787,7 +787,41 @@ if uploaded_file is not None:
                                             
                                             st.pyplot(fig)
                                         
-                                        # (Duplicate AdaBoost block removed)
+                                        # 8. AdaBoost (Evolution Gallery)
+                                        elif "AdaBoost" in str(type(model)):
+                                            from sklearn.tree import plot_tree
+                                            if hasattr(model, "estimators_") and len(model.estimators_) > 0:
+                                                n_ests = len(model.estimators_)
+                                                st.caption(f"AdaBoost Progression ({n_ests} Learners)")
+                                                
+                                                # Static Gallery (PPT Style)
+                                                c_start, c_mid, c_end = st.columns(3)
+                                                
+                                                # Helper to plot in a column
+                                                def plot_adaboost_tree(col, idx, title):
+                                                    with col:
+                                                        st.caption(title)
+                                                        fig, ax = plt.subplots(figsize=(8, 6))
+                                                        plot_tree(model.estimators_[idx], feature_names=viz_data["X_te"].columns, filled=True, ax=ax, fontsize=8)
+                                                        ax.set_title(f"Learner #{idx}")
+                                                        st.pyplot(fig)
+                                                        plt.close(fig)
+
+                                                plot_adaboost_tree(c_start, 0, "Start (First Learner)")
+                                                if n_ests > 1:
+                                                    plot_adaboost_tree(c_mid, n_ests//2, "Middle Stage")
+                                                    plot_adaboost_tree(c_end, n_ests-1, "Final Refinement")
+
+                                                # Interactive Slider (Hidden to prevent accidental reruns)
+                                                with st.expander("🔎 Inspect Specific Learner (Triggers Rerun)"):
+                                                    tree_idx = st.slider(f"Select Learner (0-{n_ests-1})", 0, n_ests-1, 0, key=f"ada_slider_{m_name}")
+                                                    fig, ax = plt.subplots(figsize=(12, 8))
+                                                    plot_tree(model.estimators_[tree_idx], feature_names=viz_data["X_te"].columns, filled=True, ax=ax, fontsize=10)
+                                                    ax.set_title(f"AdaBoost Weak Learner #{tree_idx}")
+                                                    st.pyplot(fig)
+                                                    plt.close(fig)
+                                            else:
+                                                st.info("Estimators not accessible for visualization.")
 
                                         # 7. Fallback
                                         else:
