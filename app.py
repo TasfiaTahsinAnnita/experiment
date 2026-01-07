@@ -669,12 +669,30 @@ if uploaded_file is not None:
                                             # Get the tree object
                                             target_tree = model if hasattr(model, "tree_") else model.estimators_[0]
                                             
-                                            fig, ax = plt.subplots(figsize=(12, 6))
-                                            plot_tree(target_tree, max_depth=3, feature_names=viz_data["X_te"].columns, filled=True, ax=ax, fontsize=8)
-                                            ax.set_title("Tree Visualization (Depth Limited)")
+                                            fig, ax = plt.subplots(figsize=(20, 10))
+                                            plot_tree(target_tree, max_depth=3, feature_names=viz_data["X_te"].columns, filled=True, ax=ax, fontsize=10)
+                                            ax.set_title("Tree Visualization (Depth Limited to 3)")
                                             st.pyplot(fig)
-                                            
-                                        # 4. Fallback
+
+                                        # 4. XGBoost / LightGBM Tree Viz
+                                        elif "XGB" in str(type(model)):
+                                            import xgboost as xgb
+                                            st.caption("XGBoost Tree Structure (First Tree)")
+                                            fig, ax = plt.subplots(figsize=(20, 10))
+                                            # Plot the 1st tree (index 0)
+                                            xgb.plot_tree(model, num_trees=0, ax=ax, rankdir='LR') 
+                                            ax.set_title("XGBoost Tree 0")
+                                            st.pyplot(fig)
+                                        
+                                        elif "LGBM" in str(type(model)):
+                                            import lightgbm as lgb
+                                            st.caption("LightGBM Tree Structure (First Tree)")
+                                            fig, ax = plt.subplots(figsize=(20, 10))
+                                            lgb.plot_tree(model, tree_index=0, ax=ax, show_info=['split_gain', 'internal_value', 'internal_count', 'leaf_count'])
+                                            ax.set_title("LightGBM Tree 0")
+                                            st.pyplot(fig)
+
+                                        # 5. Fallback
                                         else:
                                             m_type = type(model).__name__
                                             if "Neighbor" in m_type:
